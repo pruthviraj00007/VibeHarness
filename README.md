@@ -68,4 +68,18 @@ run it directly: `python run.py "<task>"`.
 
 Transcripts are saved to `runs/` (timestamped, never overwritten).
 
+### Commands & settings
+```powershell
+vibe --help                 # list every command and parameter
+vibe --show-config          # show effective defaults + saved overrides
+vibe --set temp 0.5         # persist a new default temperature
+vibe --set max-steps 25     # persist a new default step budget
+vibe --reset-config         # restore built-in defaults
+vibe --print-system "x"     # print the generated system prompt
+```
+Persistent defaults live in `~/.vibeharness/settings.json`. Resolution order is
+**built-in defaults < saved settings < per-run flags** (so `--temp` overrides the
+saved default for one run). Settable keys: `temp`, `model`, `max-steps`, `top-p`,
+`top_k`. Built-in default temperature is `0.3`.
+
 No third-party dependencies — standard library only.
