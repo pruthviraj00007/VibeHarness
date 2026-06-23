@@ -20,20 +20,24 @@ done, then call `finish`.
 # How the loop works
 - You are given the task and a plain-English account of the actions you have \
 already taken and what each returned.
-- Each turn, output exactly ONE action as a single JSON object: \
-{{"tool": <tool name>, "args": {{ ... }}}}.
-- Do not output anything except that one JSON object. Do not invent tools or \
-parameters. Only use the tools listed below.
-- After each action you will see its result described in the account. Use it to \
-decide your next action. If an action returns an error, adapt — do not repeat the \
+- Each turn, output a JSON ARRAY of one or more actions, each of the form \
+{{"tool": <tool name>, "args": {{ ... }}}}. The actions run in order.
+- Batch several actions in one turn when they are independent or you are confident \
+of the outcome (e.g. write a file then read it back). Emit a single action when \
+you must see its result before deciding the next move.
+- Output nothing except that JSON array. Do not invent tools or parameters. \
+Only use the tools listed below.
+- After your actions run you will see each result described in the account. Use it \
+to decide your next turn. If an action returns an error, adapt — do not repeat the \
 same failing call.
-- When the task is complete, call `finish` with a short summary.
+- When the task is complete, end with a `finish` action and a short summary. \
+Anything after `finish` in the array is ignored.
 
 # Tools
 {docs}
 
 # Action schema
-Every action you emit must validate against this JSON schema:
+Your output each turn must validate against this JSON schema (an array of actions):
 {schema}
 
 # Guidance
@@ -58,6 +62,7 @@ def build_turn_prompt(task: str, narrative: str) -> str:
         f"# Task\n{task}\n\n"
         f"# What you have done so far\n{narrative}\n\n"
         f"# Your next action\n"
-        f"Choose the single best next tool call to make progress on the task "
-        f"(or call `finish` if it is already complete). Respond with one JSON action."
+        f"Choose the next action (or several, as a batch) to make progress on the "
+        f"task, ending with `finish` once it is complete. Respond with a JSON array "
+        f"of one or more actions."
     )

@@ -1,6 +1,10 @@
 __pycache__/
 *.pyc
-runs/*.txt
+.vibe/
+runs/
 workspace/*
 !workspace/.gitkeep
 .venv/
+*.egg-info/
+build/
+dist/

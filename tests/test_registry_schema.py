@@ -36,20 +36,22 @@ class RegistryTest(unittest.TestCase):
         self.assertIsNone(self.registry.get("does_not_exist"))
         self.assertIn("finish", self.registry.names())
 
-    def test_action_schema_is_oneof_over_all_tools(self):
+    def test_action_schema_is_array_of_tool_calls(self):
         schema = self.registry.action_schema()
-        self.assertIn("oneOf", schema)
-        self.assertEqual(len(schema["oneOf"]), len(self.registry.all()))
-        consts = {b["properties"]["tool"]["const"] for b in schema["oneOf"]}
+        self.assertEqual(schema["type"], "array")
+        self.assertEqual(schema["minItems"], 1)
+        one_of = schema["items"]["oneOf"]
+        self.assertEqual(len(one_of), len(self.registry.all()))
+        consts = {b["properties"]["tool"]["const"] for b in one_of}
         self.assertEqual(consts, set(self.registry.names()))
 
     def test_each_branch_requires_tool_and_args(self):
-        for branch in self.registry.action_schema()["oneOf"]:
+        for branch in self.registry.action_schema()["items"]["oneOf"]:
             self.assertEqual(branch["required"], ["tool", "args"])
             self.assertIn("args", branch["properties"])
 
     def test_finish_branch_requires_summary(self):
-        branch = next(b for b in self.registry.action_schema()["oneOf"]
+        branch = next(b for b in self.registry.action_schema()["items"]["oneOf"]
                       if b["properties"]["tool"]["const"] == "finish")
         self.assertEqual(branch["properties"]["args"]["required"], ["summary"])
 

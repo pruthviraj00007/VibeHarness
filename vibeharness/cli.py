@@ -23,16 +23,8 @@ from .llm import OllamaClient, OllamaUnavailable
 from .prompt import SystemPromptBuilder
 from .registry import ToolRegistry
 from .reporting import ConsoleReporter
+from .runlog import RunLogger
 from .settings import Settings, settable_keys
-
-
-def _runs_dir() -> Path:
-    """Where transcripts are written: <repo>/runs when running from a checkout,
-    else ~/.vibeharness/runs when installed as a package."""
-    repo_runs = Path(__file__).resolve().parent.parent / "runs"
-    if (repo_runs.parent / "run.py").exists():
-        return repo_runs
-    return Path.home() / ".vibeharness" / "runs"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -135,6 +127,7 @@ def run_agent(args: argparse.Namespace) -> int:
     reporter.run_start(task, str(workdir), config)
 
     agent = RalphAgent(OllamaClient(config), registry, system_prompt, config, reporter=reporter)
+    started = datetime.now()
     try:
         result = agent.run(task)
     except OllamaUnavailable as e:
@@ -142,12 +135,8 @@ def run_agent(args: argparse.Namespace) -> int:
         return 1
     reporter.run_end(result)
 
-    runs = _runs_dir()
-    runs.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out = runs / f"run_t{config.temperature}_{stamp}.txt"
-    out.write_text(result.transcript(), encoding="utf-8")
-    print(f" transcript: {out}")
+    log_path = RunLogger(workdir).write(task, config, result, started)
+    print(f" log: {log_path}")
     return 0 if result.finished else 2
 
 

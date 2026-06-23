@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .agent import RunResult, Step
+    from .agent import Action, RunResult
     from .config import Config
 
 
@@ -26,7 +26,7 @@ class Reporter(ABC):
     @abstractmethod
     def action_token(self, text: str) -> None: ...
     @abstractmethod
-    def step_result(self, step: "Step") -> None: ...
+    def action_result(self, action: "Action") -> None: ...
     @abstractmethod
     def run_end(self, result: "RunResult") -> None: ...
 
@@ -36,7 +36,7 @@ class NullReporter(Reporter):
     def turn_start(self, index): pass
     def reasoning_token(self, text): pass
     def action_token(self, text): pass
-    def step_result(self, step): pass
+    def action_result(self, action): pass
     def run_end(self, result): pass
 
 
@@ -74,7 +74,7 @@ class ConsoleReporter(Reporter):
 
     def turn_start(self, index: int) -> None:
         self._reason_open = self._action_open = False
-        self._w(self._c("cyan", f"\n┌─ step {index} " + "─" * 40 + "\n"))
+        self._w(self._c("cyan", f"\n┌─ turn {index} " + "─" * 40 + "\n"))
 
     def reasoning_token(self, text: str) -> None:
         if not self._reason_open:
@@ -88,13 +88,14 @@ class ConsoleReporter(Reporter):
             self._action_open = True
         self._w(self._c("yellow", text))
 
-    def step_result(self, step) -> None:
-        color = "green" if step.ok else "red"
-        mark = "✓" if step.ok else "✗"
-        self._w("\n" + self._c(color, f"└ {mark} {step.observation}") + "\n")
+    def action_result(self, action) -> None:
+        color = "green" if action.ok else "red"
+        mark = "✓" if action.ok else "✗"
+        self._w("\n" + self._c(color, f"└ {mark} {action.observation}") + "\n")
 
     def run_end(self, result) -> None:
+        n = len(result.turns)
         if result.finished:
-            self._w(self._c("green", f"\n done in {len(result.steps)} steps — {result.final_summary}\n"))
+            self._w(self._c("green", f"\n done in {n} turns — {result.final_summary}\n"))
         else:
-            self._w(self._c("red", f"\n stopped after {len(result.steps)} steps without finishing.\n"))
+            self._w(self._c("red", f"\n stopped after {n} turns without finishing.\n"))

@@ -1,16 +1,20 @@
 """The Ralph loop.
 
-Each turn: render the task + narrative -> ask the model for one constrained
-action -> parse -> execute via the registry -> append a natural-language
-observation. Repeat until `finish` or the step budget is exhausted.
+Each turn: render the task + narrative -> ask the model for one or more
+constrained actions (a JSON array) -> execute them in order -> append a
+natural-language observation for each. Repeat until `finish` or the step budget.
+
+Batching several actions in one turn is allowed (the model decides them together,
+without seeing intermediate results); a turn that needs a result before deciding
+the next move simply emits a single action.
 
 The agent depends only on abstractions: an LLMClient, a ToolRegistry, a
-NarrativeMemory and a system prompt string.
+NarrativeMemory and a Reporter.
 """
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from .config import Config
 from .llm import LLMClient
@@ -21,29 +25,43 @@ from .reporting import NullReporter, Reporter
 
 
 @dataclass
-class Step:
-    index: int
-    reasoning: str
-    action_json: str
+class Action:
+    """One executed tool call within a turn."""
     tool: str | None
     args: dict
     observation: str
     ok: bool
+    final: bool = False
+
+
+@dataclass
+class Turn:
+    """One model turn: its reasoning, the raw action payload, and the executed actions."""
+    index: int
+    reasoning: str
+    raw_action: str
+    actions: list[Action] = field(default_factory=list)
 
 
 @dataclass
 class RunResult:
     task: str
-    steps: list[Step] = field(default_factory=list)
+    turns: list[Turn] = field(default_factory=list)
     finished: bool = False
     final_summary: str = ""
 
+    def to_dict(self) -> dict:
+        return asdict(self)
+
     def transcript(self) -> str:
         out = [f"TASK: {self.task}", ""]
-        for s in self.steps:
-            out.append(f"--- Step {s.index} ---")
-            out.append(f"action: {s.action_json}")
-            out.append(f"result: {s.observation}")
+        for turn in self.turns:
+            out.append(f"--- Turn {turn.index} ---")
+            if turn.reasoning.strip():
+                out.append(f"reasoning:\n{turn.reasoning.strip()}")
+            for a in turn.actions:
+                out.append(f"action: {a.tool} {json.dumps(a.args, ensure_ascii=False)}")
+                out.append(f"result: {a.observation}")
             out.append("")
         out.append(f"FINISHED: {self.finished}")
         if self.final_summary:
@@ -73,50 +91,60 @@ class RalphAgent:
                 on_reason=self._reporter.reasoning_token,
                 on_action=self._reporter.action_token,
             )
-            tool_name, args, parse_error = self._parse(decision.action_json)
+            turn = Turn(index=i, reasoning=decision.reasoning, raw_action=decision.action_json)
+            result.turns.append(turn)
 
-            if parse_error:
-                observation = f"your last action was invalid and could not be run: {parse_error}."
-                step = Step(i, decision.reasoning, decision.action_json, None, {}, observation, False)
-                memory.record(observation)
-                self._emit(step, result)
+            actions, error = self._parse(decision.action_json)
+            if error is not None:
+                self._record(turn, Action(None, {}, f"your last response was invalid and "
+                                          f"could not be run: {error}.", ok=False), memory)
                 continue
 
-            tool = self._registry.get(tool_name)
-            if tool is None:
-                observation = f"you tried to use '{tool_name}', which is not a real tool."
-                step = Step(i, decision.reasoning, decision.action_json, tool_name, args, observation, False)
-                memory.record(observation)
-                self._emit(step, result)
-                continue
+            for tool_name, args in actions:
+                action = self._execute(tool_name, args)
+                self._record(turn, action, memory)
+                if action.final:
+                    result.finished = True
+                    result.final_summary = args.get("summary", "")
+                    break
 
-            tool_result = tool.run(args)
-            step = Step(i, decision.reasoning, decision.action_json, tool_name, args,
-                        tool_result.observation, tool_result.ok)
-            memory.record(tool_result.observation)
-            self._emit(step, result)
-
-            if tool_result.is_final:
-                result.finished = True
-                result.final_summary = args.get("summary", "")
+            if result.finished:
                 break
 
         return result
 
     # ---- helpers ----
+    def _execute(self, tool_name: str | None, args: dict) -> Action:
+        tool = self._registry.get(tool_name) if tool_name else None
+        if tool is None:
+            return Action(tool_name, args,
+                          f"you tried to use '{tool_name}', which is not a real tool.", ok=False)
+        result = tool.run(args)
+        return Action(tool_name, args, result.observation, ok=result.ok, final=result.is_final)
+
+    def _record(self, turn: Turn, action: Action, memory: NarrativeMemory) -> None:
+        turn.actions.append(action)
+        memory.record(action.observation)
+        self._reporter.action_result(action)
+
     @staticmethod
     def _parse(action_json: str):
+        """Parse the turn's payload into a list of (tool, args). A lone object is
+        accepted as a one-element batch. Returns (actions, error_message)."""
         try:
             obj = json.loads(action_json)
         except json.JSONDecodeError as e:
-            return None, {}, f"not valid JSON ({e})"
-        if not isinstance(obj, dict) or "tool" not in obj:
-            return None, {}, "missing 'tool' field"
-        args = obj.get("args", {})
-        if not isinstance(args, dict):
-            return obj.get("tool"), {}, "'args' must be an object"
-        return obj.get("tool"), args, None
-
-    def _emit(self, step: Step, result: RunResult) -> None:
-        result.steps.append(step)
-        self._reporter.step_result(step)
+            return None, f"not valid JSON ({e})"
+        if isinstance(obj, dict):
+            obj = [obj]
+        if not isinstance(obj, list) or not obj:
+            return None, "expected a non-empty JSON array of actions"
+        actions = []
+        for item in obj:
+            if not isinstance(item, dict) or "tool" not in item:
+                return None, "each action must be an object with a 'tool' field"
+            args = item.get("args", {})
+            if not isinstance(args, dict):
+                return None, "'args' must be an object"
+            actions.append((item["tool"], args))
+        return actions, None

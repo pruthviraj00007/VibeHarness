@@ -32,9 +32,10 @@ vibe "Create a CHANGELOG.md and seed it with an Unreleased section."
 
 ## Why it's interesting
 
-- **Constrained actions.** Every action is a JSON object validated against a JSON schema *at decode time* (Ollama's `format` grammar), so the model can't emit malformed tool calls — even at high temperature, where small models otherwise drift into garbage.
-- **Two-phase turns.** Each turn the model first reasons freely, then emits the action under the schema constraint. (This is an Ollama adaptation of [noperator's vLLM structural-tag trick](https://gist.github.com/noperator/6c711ab19027ea8056442df839f2d7e6).) The reasoning is discarded from the running context.
+- **Constrained actions.** Each turn the model emits a JSON array of one or more tool calls, validated against a JSON schema *at decode time* (Ollama's `format` grammar), so it can't produce malformed actions — even at high temperature, where small models otherwise drift into garbage.
+- **Two-phase turns.** The model first reasons freely, then emits the action(s) under the schema constraint. (This is an Ollama adaptation of [noperator's vLLM structural-tag trick](https://gist.github.com/noperator/6c711ab19027ea8056442df839f2d7e6).) The reasoning is dropped from the running context — but kept on disk (see below).
 - **Natural-language memory.** Instead of a JSON/ChatML transcript, the agent's past is a plain-English narrative ("First, you… Then, you…"), which is what a small model follows most reliably.
+- **Full reasoning logs.** Every run is written in full — *including* each turn's reasoning trace — to a hidden `.vibe/` folder in the workspace, so you can mine the traces to improve the prompt and model.
 - **Small but powerful tools.** Six tools cover the filesystem; behaviour is widened with optional parameters (e.g. `write_file.mode` = overwrite/append/prepend) rather than by adding more tools.
 - **Zero runtime dependencies.** Pure Python standard library.
 
@@ -118,7 +119,7 @@ vibe --print-system "x"     # print the generated system prompt
 ```
 Persistent defaults live in `~/.vibeharness/settings.json` (override the location with the `VIBEHARNESS_HOME` env var). Resolution order is **built-in defaults < saved settings < per-run flags**. Settable keys: `temp`, `model`, `max-steps`, `top-p`, `top_k`. The built-in default temperature is `0.3`.
 
-Run transcripts are saved to `runs/` (when run from a checkout) or `~/.vibeharness/runs/`, timestamped and never overwritten.
+Each run is logged (with reasoning traces) to a hidden `.vibe/` folder in the workspace — see [Run logs](#run-logs-vibe).
 
 ---
 
@@ -135,15 +136,30 @@ Each turn is two model calls — reason, then act under a schema constraint:
  └────────────────────────────────────┘
         │
         ▼
- ┌─ phase 2: constrained action ──────┐   /api/generate, raw continuation,
- │  {"tool": "...", "args": {...}}     │   format = tools JSON schema
+ ┌─ phase 2: constrained action(s) ───┐   /api/generate, raw continuation,
+ │  [{"tool":"...","args":{...}}, …]   │   format = tools JSON schema (an array)
  └────────────────────────────────────┘
         │
         ▼
- parse → execute via ToolRegistry → append a plain-English observation
+ parse → execute each action in order via ToolRegistry → append a
+ plain-English observation per action
         │
         └──────────► repeat until `finish` or the step budget
 ```
+
+A turn may **batch several actions** (e.g. write a file and read it back) when the
+model is confident of the outcomes, or emit a single action when it needs the
+result before deciding the next move.
+
+### Run logs (`.vibe/`)
+Each run writes two timestamped files into a hidden `.vibe/` folder in the
+workspace:
+- `<stamp>.json` — the complete structured log, **including every turn's reasoning
+  trace**, the actions, results, and the config used.
+- `<stamp>.md` — a readable transcript.
+
+These are intended for analysis — diffing reasoning across runs, spotting where a
+small model goes wrong, and tuning the prompt.
 
 ### Tools
 | tool | purpose | key params |
@@ -184,7 +200,7 @@ python -m unittest discover -s tests -v     # standard library, no install neede
 # or, if you prefer pytest:
 pip install -e ".[dev]" && pytest -q
 ```
-The suite (54 tests, runs in <0.1s) covers the filesystem service, every tool, schema generation, the settings store, the narrative memory, prompt building, the LLM helper functions, and the full agent loop driven by a fake LLM client.
+The suite (58 tests, runs in <0.1s) covers the filesystem service, every tool, schema generation, the settings store, the narrative memory, prompt building, the LLM helper functions, run logging, and the full agent loop (single- and multi-action turns) driven by a fake LLM client.
 
 ---
 

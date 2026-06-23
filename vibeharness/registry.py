@@ -28,8 +28,13 @@ class ToolRegistry:
         return list(self._tools.values())
 
     def action_schema(self) -> dict:
-        """A oneOf over every tool's call schema -> forces a valid single action."""
-        return {"oneOf": [t.call_schema() for t in self._tools.values()]}
+        """An array of one or more actions; each must match one tool's call schema.
+        Forces every emitted action to be structurally valid."""
+        return {
+            "type": "array",
+            "minItems": 1,
+            "items": {"oneOf": [t.call_schema() for t in self._tools.values()]},
+        }
 
     def docs(self) -> str:
         return "\n\n".join(t.doc() for t in self._tools.values())
