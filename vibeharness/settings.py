@@ -1,21 +1,22 @@
 """Persistent user settings.
 
-A tiny JSON store at ~/.vibeharness/settings.json that overrides the built-in
-Config defaults. Lets the user change e.g. the default temperature once and have
-it stick, while per-run CLI flags still take precedence.
+A tiny JSON store (default ``~/.vibeharness/settings.json``) that overrides the
+built-in :class:`Config` defaults, so a user can change e.g. the default
+temperature once and have it stick. Per-run CLI flags still take precedence.
 
-Resolution order (lowest to highest): Config defaults < saved settings < CLI flags.
+Resolution order (low to high): Config defaults < saved settings < CLI flags.
+
+The storage directory can be redirected with the ``VIBEHARNESS_HOME`` environment
+variable, which also keeps the store trivially testable.
 """
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import fields, replace
 from pathlib import Path
 
 from .config import Config
-
-SETTINGS_DIR = Path.home() / ".vibeharness"
-SETTINGS_PATH = SETTINGS_DIR / "settings.json"
 
 # Friendly CLI key -> (Config field name, value parser). Only these are settable.
 _SETTABLE: dict[str, tuple[str, type]] = {
@@ -30,18 +31,28 @@ _SETTABLE: dict[str, tuple[str, type]] = {
 
 
 def settable_keys() -> list[str]:
-    # de-duplicate to the canonical friendly names
+    """Canonical, de-duplicated list of user-facing settable keys."""
     return ["temp", "model", "max-steps", "top-p", "top_k"]
 
 
+def _home() -> Path:
+    override = os.environ.get("VIBEHARNESS_HOME")
+    return Path(override) if override else Path.home() / ".vibeharness"
+
+
 class Settings:
-    """Load/save persistent overrides and merge them into a Config."""
+    """Load/save persistent overrides and merge them into a :class:`Config`."""
+
+    @staticmethod
+    def path() -> Path:
+        return _home() / "settings.json"
 
     @staticmethod
     def load() -> dict:
-        if SETTINGS_PATH.exists():
+        path = Settings.path()
+        if path.exists():
             try:
-                data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+                data = json.loads(path.read_text(encoding="utf-8"))
                 return data if isinstance(data, dict) else {}
             except (json.JSONDecodeError, OSError):
                 return {}
@@ -49,16 +60,21 @@ class Settings:
 
     @staticmethod
     def save(data: dict) -> None:
-        SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-        SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        path = Settings.path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     @staticmethod
     def set(key: str, raw_value: str) -> tuple[str, object]:
-        """Persist one setting. Returns (config_field, parsed_value)."""
+        """Persist one setting. Returns ``(config_field, parsed_value)``.
+
+        Raises ``KeyError`` for an unknown key and ``ValueError`` for a value that
+        cannot be parsed into the field's type.
+        """
         if key not in _SETTABLE:
             raise KeyError(key)
         field_name, caster = _SETTABLE[key]
-        value = caster(raw_value)            # may raise ValueError on bad input
+        value = caster(raw_value)
         data = Settings.load()
         data[field_name] = value
         Settings.save(data)
@@ -66,9 +82,10 @@ class Settings:
 
     @staticmethod
     def reset() -> bool:
-        """Delete saved settings. Returns True if a file was removed."""
-        if SETTINGS_PATH.exists():
-            SETTINGS_PATH.unlink()
+        """Delete saved settings. Returns ``True`` if a file was removed."""
+        path = Settings.path()
+        if path.exists():
+            path.unlink()
             return True
         return False
 

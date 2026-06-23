@@ -1,72 +1,111 @@
-# vibethinkharnessProto1
+# VibeHarness
 
-A minimal **Ralph-loop** agent harness for small local models (built for
-**VibeThinker-3B** via Ollama). It gives the model a tiny, high-level toolset for
-operating on the Windows filesystem and drives it one action at a time until the
-task is done.
+**A tiny, dependency-free Ralph-loop agent harness for small local models.**
 
-## Design
+VibeHarness turns a 3B local model ([VibeThinker-3B](https://huggingface.co/WeiboAI/VibeThinker-3B), served by [Ollama](https://ollama.com)) into a basic command-line coding agent. You type a task; it works on your current directory one step at a time — reading, writing, searching, and managing files — and streams its reasoning and actions live to the terminal.
 
-- **Ralph loop:** each turn the model picks exactly one tool call; the harness
-  executes it and appends the result. Repeat until `finish` or the step budget.
-- **Constrained actions:** the model emits a single JSON object
-  `{"tool": ..., "args": {...}}`, enforced by Ollama's `format` (JSON-schema)
-  grammar so the action is always structurally valid — even at high temperature.
-- **Two-phase per turn** (converted from noperator's vLLM structural-tag trick):
-  1. *reason freely* (stopped at `</think>`), then
-  2. *act* under the schema constraint. The reasoning is discarded.
-- **Natural-language memory:** the model's past is a plain-English narrative
-  ("First, you … Then, you …"), not a JSON/ChatML transcript. Thinking is never
-  carried across turns.
-- **Small but powerful tools:** behaviour is widened with optional params instead
-  of more tools (e.g. `write_file.mode` = overwrite/append/prepend,
-  `manage_path.action` = make_directory/delete/move).
-
-### Tools
-| tool | purpose | key params |
-|------|---------|-----------|
-| `list_directory` | list a folder | `path?`, `recursive?` |
-| `read_file` | read a file | `path` |
-| `write_file` | create/modify a file | `path`, `content`, `mode?` |
-| `search` | find text or filenames | `query`, `path?`, `target?`, `max_results?` |
-| `manage_path` | mkdir / delete / move | `action`, `path`, `destination?` |
-| `finish` | end the task | `summary` |
-
-The system prompt documents each tool in plain English **and** embeds the formal
-JSON schema — both generated from the single `ToolRegistry` source of truth.
-
-## Architecture (SOLID)
+```powershell
+cd C:\my\project
+vibe "Create a CHANGELOG.md and seed it with an Unreleased section."
 ```
-vibeharness/
-  tools.py       Tool interface + Param/ToolResult (docs & schema derived from params)
-  filesystem.py  FileSystem service — the only code that touches the OS (SRP)
-  fs_tools.py    concrete tools wrapping FileSystem, each self-describing
-  registry.py    ToolRegistry — builds docs + action schema (OCP: add tools freely)
-  prompt.py      system prompt + per-turn prompt builders
-  memory.py      NarrativeMemory — the English account of past actions
-  llm.py         LLMClient interface + OllamaClient two-phase impl (DIP)
-  agent.py       RalphAgent — the loop orchestrator
-run.py           CLI
+
 ```
+ vibe (vibethinker, temp 0.3)
+ workspace: C:\my\project
+ task: Create a CHANGELOG.md and seed it with an Unreleased section.
+
+┌─ step 1 ────────────────────────────────────────
+│ thinking: <think>No changelog exists yet, so I'll create one…</think>
+│ action: {"tool":"write_file","args":{"path":"CHANGELOG.md","content":"# Changelog\n\n## [Unreleased]\n"}}
+└ ✓ you wrote the file 'CHANGELOG.md' (38 characters).
+
+┌─ step 2 ────────────────────────────────────────
+│ action: {"tool":"finish","args":{"summary":"Created CHANGELOG.md with an Unreleased section."}}
+└ ✓ you finished the task: Created CHANGELOG.md with an Unreleased section.
+
+ done in 2 steps — Created CHANGELOG.md with an Unreleased section.
+```
+
+> **Status:** working prototype. VibeThinker-3B is a math/reasoning specialist and is *not* tuned for tool use, so treat this as a research toy for studying small-model agentic behaviour — not a production agent.
+
+---
+
+## Why it's interesting
+
+- **Constrained actions.** Every action is a JSON object validated against a JSON schema *at decode time* (Ollama's `format` grammar), so the model can't emit malformed tool calls — even at high temperature, where small models otherwise drift into garbage.
+- **Two-phase turns.** Each turn the model first reasons freely, then emits the action under the schema constraint. (This is an Ollama adaptation of [noperator's vLLM structural-tag trick](https://gist.github.com/noperator/6c711ab19027ea8056442df839f2d7e6).) The reasoning is discarded from the running context.
+- **Natural-language memory.** Instead of a JSON/ChatML transcript, the agent's past is a plain-English narrative ("First, you… Then, you…"), which is what a small model follows most reliably.
+- **Small but powerful tools.** Six tools cover the filesystem; behaviour is widened with optional parameters (e.g. `write_file.mode` = overwrite/append/prepend) rather than by adding more tools.
+- **Zero runtime dependencies.** Pure Python standard library.
+
+---
+
+## Prerequisites
+
+You need three things: Python, Ollama, and a VibeThinker model registered in Ollama.
+
+### 1. Python ≥ 3.10
+Check with `python --version`. (Windows, macOS, and Linux are all supported; the harness is pure Python. Developed and tested on Windows 10.)
+
+### 2. Ollama
+Install from [ollama.com/download](https://ollama.com/download) and make sure the server is running:
+```bash
+ollama --version
+ollama serve        # usually already running as a background service / tray app
+```
+
+### 3. The `vibethinker` model
+VibeThinker ships as safetensors; Ollama needs GGUF. Pull a community GGUF and register it under the name `vibethinker` using the included [`Modelfile`](./Modelfile):
+```bash
+ollama pull hf.co/mradermacher/VibeThinker-3B-GGUF:Q8_0
+ollama create vibethinker -f Modelfile
+ollama run vibethinker "hi"      # quick sanity check
+```
+The `Modelfile` only points at the weights — the harness sets all sampling parameters per request.
+
+### Hardware
+The Q8_0 quant of this 3B model needs **~3.5 GB of VRAM** (or runs on CPU, just slower). Any modern GPU with ≥4 GB, or a CPU with ≥8 GB RAM, is fine.
+
+---
+
+## Install
+
+### Option A — install the package (recommended; cross-platform `vibe` command)
+```bash
+git clone https://github.com/NickalasLight/VibeHarness.git
+cd VibeHarness
+pip install -e .          # creates the `vibe` console command
+vibe "list this folder and tell me what's here"
+```
+
+### Option B — no install
+```bash
+git clone https://github.com/NickalasLight/VibeHarness.git
+cd VibeHarness
+python run.py "list this folder and tell me what's here"
+# or:  python -m vibeharness "..."
+```
+
+### Windows convenience launcher
+`bin\vibe.cmd` is a launcher that works in both PowerShell and CMD without `pip install`. Add the `bin` folder to your PATH (open a **new** terminal afterwards):
+```powershell
+[Environment]::SetEnvironmentVariable('Path',
+  [Environment]::GetEnvironmentVariable('Path','User') + ';' + (Resolve-Path .\bin),
+  'User')
+```
+
+---
 
 ## Usage
 
-`vibe` runs the agent **in your current terminal directory** (like a basic coding
-agent) and streams each turn live. Requires Ollama running with a `vibethinker`
-model (Q8_0 GGUF); GPU is forced via `OLLAMA_VULKAN=0`.
+`vibe` runs **in your current terminal directory** — that directory is the agent's workspace.
 
 ```powershell
-cd C:\some\project
 vibe "Create notes.txt containing 'hello hello hello', then read it back to verify."
-vibe --temp 1.0 --max-steps 12 "List this folder and summarize what's here."
-vibe --print-system "x"          # inspect the generated system prompt
+vibe --temp 1.0 "draft a haiku into poem.txt"     # override temperature for one run
+vibe --max-steps 30 "tidy up this folder"         # raise the step budget
+vibe --workdir C:\some\other\dir "summarise it"   # operate elsewhere
 ```
-
-`bin\vibe.cmd` is added to the User PATH, so `vibe` works in **both PowerShell and
-CMD** (open a new terminal after install so the PATH is picked up). You can also
-run it directly: `python run.py "<task>"`.
-
-Transcripts are saved to `runs/` (timestamped, never overwritten).
 
 ### Commands & settings
 ```powershell
@@ -77,9 +116,93 @@ vibe --set max-steps 25     # persist a new default step budget
 vibe --reset-config         # restore built-in defaults
 vibe --print-system "x"     # print the generated system prompt
 ```
-Persistent defaults live in `~/.vibeharness/settings.json`. Resolution order is
-**built-in defaults < saved settings < per-run flags** (so `--temp` overrides the
-saved default for one run). Settable keys: `temp`, `model`, `max-steps`, `top-p`,
-`top_k`. Built-in default temperature is `0.3`.
+Persistent defaults live in `~/.vibeharness/settings.json` (override the location with the `VIBEHARNESS_HOME` env var). Resolution order is **built-in defaults < saved settings < per-run flags**. Settable keys: `temp`, `model`, `max-steps`, `top-p`, `top_k`. The built-in default temperature is `0.3`.
 
-No third-party dependencies — standard library only.
+Run transcripts are saved to `runs/` (when run from a checkout) or `~/.vibeharness/runs/`, timestamped and never overwritten.
+
+---
+
+## How it works
+
+Each turn is two model calls — reason, then act under a schema constraint:
+
+```
+ task + natural-language narrative of past actions
+        │
+        ▼
+ ┌─ phase 1: free reasoning ──────────┐   /api/chat, stop at </think>
+ │  <think> … </think>                │   (streamed live, then discarded)
+ └────────────────────────────────────┘
+        │
+        ▼
+ ┌─ phase 2: constrained action ──────┐   /api/generate, raw continuation,
+ │  {"tool": "...", "args": {...}}     │   format = tools JSON schema
+ └────────────────────────────────────┘
+        │
+        ▼
+ parse → execute via ToolRegistry → append a plain-English observation
+        │
+        └──────────► repeat until `finish` or the step budget
+```
+
+### Tools
+| tool | purpose | key params |
+|------|---------|-----------|
+| `list_directory` | list a folder | `path?`, `recursive?` |
+| `read_file` | read a file | `path` |
+| `write_file` | create/modify a file | `path`, `content`, `mode?` (overwrite/append/prepend) |
+| `search` | find text or filenames | `query`, `path?`, `target?` (content/filename/both), `max_results?` |
+| `manage_path` | mkdir / delete / move | `action`, `path`, `destination?` |
+| `finish` | end the task | `summary` |
+
+The system prompt documents each tool in plain English **and** embeds the formal JSON schema — both generated from the single `ToolRegistry` source of truth, so docs and the enforced grammar can never drift apart.
+
+### Architecture
+```
+vibeharness/
+  tools.py       Tool interface + Param/ToolResult (docs & schema derived from params)
+  filesystem.py  FileSystem service — the only code that touches the OS (SRP)
+  fs_tools.py    concrete tools wrapping FileSystem, each self-describing
+  registry.py    ToolRegistry — builds docs + action schema (OCP: add tools freely)
+  prompt.py      system prompt + per-turn prompt builders
+  memory.py      NarrativeMemory — the English account of past actions
+  llm.py         LLMClient interface + OllamaClient two-phase streaming (DIP)
+  reporting.py   Reporter interface + ConsoleReporter (live, colored output)
+  agent.py       RalphAgent — the loop orchestrator
+  settings.py    persistent user settings
+  cli.py         argument parsing and command dispatch
+run.py           no-install entrypoint   |   bin/vibe.cmd  Windows launcher
+```
+The design leans on small interfaces: the agent depends on `LLMClient` and `Reporter` abstractions, so the whole loop is testable with a fake client and a null reporter — no model required.
+
+---
+
+## Testing
+
+```bash
+python -m unittest discover -s tests -v     # standard library, no install needed
+# or, if you prefer pytest:
+pip install -e ".[dev]" && pytest -q
+```
+The suite (54 tests, runs in <0.1s) covers the filesystem service, every tool, schema generation, the settings store, the narrative memory, prompt building, the LLM helper functions, and the full agent loop driven by a fake LLM client.
+
+---
+
+## Troubleshooting
+
+- **`Could not reach Ollama …`** — the server isn't running. Start it with `ollama serve` (or launch the Ollama app).
+- **It's slow / not using my GPU** — confirm with `ollama ps` (`PROCESSOR` should say `100% GPU`) and `nvidia-smi` (VRAM should be in use). On laptops with both an NVIDIA dGPU *and* an integrated GPU, Ollama's Vulkan backend may pick the iGPU; force CUDA with `setx OLLAMA_VULKAN 0` and restart the Ollama server.
+- **Garbled / non-English tokens in output** — small models drift at high temperature; the *action* is always valid (schema-constrained), but lower `--temp` (e.g. 0.3) for cleaner reasoning and content.
+- **No colors on Windows** — colors use ANSI; pass `--no-color` if your console doesn't render them.
+
+---
+
+## Acknowledgements
+
+- [VibeThinker-3B](https://huggingface.co/WeiboAI/VibeThinker-3B) by WeiboAI (MIT).
+- The constrained-decoding-after-reasoning idea is adapted from [noperator's structural-tag gist](https://gist.github.com/noperator/6c711ab19027ea8056442df839f2d7e6).
+- [Ollama](https://ollama.com) for painless local model serving.
+
+## License
+
+[MIT](./LICENSE) © 2026 Nickalas Light

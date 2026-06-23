@@ -1,0 +1,6 @@
+# Ollama model definition for the harness.
+# Build it with:  ollama create vibethinker -f Modelfile
+#
+# The harness sets sampling parameters (temperature, top_p, top_k, num_ctx,
+# num_gpu) per request, so this only needs to point at the GGUF weights.
+FROM hf.co/mradermacher/VibeThinker-3B-GGUF:Q8_0

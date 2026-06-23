@@ -12,6 +12,7 @@ Both phases stream token-by-token so callers can render generation live.
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -21,6 +22,10 @@ from .config import Config
 
 # A sink for streamed tokens; receives each chunk of text as it is generated.
 TokenSink = Callable[[str], None]
+
+
+class OllamaUnavailable(RuntimeError):
+    """Raised when the Ollama server cannot be reached."""
 
 
 @dataclass(frozen=True)
@@ -82,20 +87,26 @@ class OllamaClient(LLMClient):
             headers={"Content-Type": "application/json"},
         )
         parts: list[str] = []
-        with urllib.request.urlopen(req, timeout=self._cfg.request_timeout) as resp:
-            for raw in resp:
-                line = raw.decode("utf-8").strip()
-                if not line:
-                    continue
-                obj = json.loads(line)
-                chunk = (obj.get("message", {}).get("content")
-                         if "message" in obj else obj.get("response", ""))
-                if chunk:
-                    parts.append(chunk)
-                    if on_token:
-                        on_token(chunk)
-                if obj.get("done"):
-                    break
+        try:
+            with urllib.request.urlopen(req, timeout=self._cfg.request_timeout) as resp:
+                for raw in resp:
+                    line = raw.decode("utf-8").strip()
+                    if not line:
+                        continue
+                    obj = json.loads(line)
+                    chunk = (obj.get("message", {}).get("content")
+                             if "message" in obj else obj.get("response", ""))
+                    if chunk:
+                        parts.append(chunk)
+                        if on_token:
+                            on_token(chunk)
+                    if obj.get("done"):
+                        break
+        except urllib.error.URLError as e:
+            raise OllamaUnavailable(
+                f"Could not reach Ollama at {self._cfg.ollama_url}. "
+                f"Is it running? Start it with `ollama serve`. ({e.reason})"
+            ) from e
         return "".join(parts)
 
     # ---- helpers ----

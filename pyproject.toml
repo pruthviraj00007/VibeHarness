@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vibeharness"
+version = "0.1.0"
+description = "A tiny Ralph-loop agent harness for small local models (VibeThinker-3B via Ollama)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Nickalas Light" }]
+keywords = ["llm", "agent", "ollama", "vibethinker", "ralph-loop", "local-ai", "tool-use"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []  # standard library only
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/NickalasLight/VibeHarness"
+Repository = "https://github.com/NickalasLight/VibeHarness"
+
+[project.scripts]
+vibe = "vibeharness.cli:main"
+
+[tool.setuptools]
+packages = ["vibeharness"]
