@@ -1,5 +1,9 @@
 # VibeHarness
 
+[![CI](https://github.com/NickalasLight/VibeHarness/actions/workflows/ci.yml/badge.svg)](https://github.com/NickalasLight/VibeHarness/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+
 **A tiny, dependency-free Ralph-loop agent harness for small local models.**
 
 VibeHarness turns a 3B local model ([VibeThinker-3B](https://huggingface.co/WeiboAI/VibeThinker-3B), served by [Ollama](https://ollama.com)) into a basic command-line coding agent. You type a task; it works on your current directory one step at a time — reading, writing, searching, and managing files — and streams its reasoning and actions live to the terminal.
@@ -27,6 +31,28 @@ vibe "Create a CHANGELOG.md and seed it with an Unreleased section."
 ```
 
 > **Status:** working prototype. VibeThinker-3B is a math/reasoning specialist and is *not* tuned for tool use, so treat this as a research toy for studying small-model agentic behaviour — not a production agent.
+
+---
+
+## Quickstart
+
+Install everything (requires [Ollama](https://ollama.com/download) and Python ≥ 3.10):
+
+```bash
+# 1. Install Ollama from https://ollama.com/download, then pull + register the model
+ollama pull hf.co/mradermacher/VibeThinker-3B-GGUF:Q8_0
+git clone https://github.com/NickalasLight/VibeHarness.git
+cd VibeHarness
+ollama create vibethinker -f Modelfile
+
+# 2. Install the harness (creates the `vibe` command)
+pip install -e .
+
+# 3. Run it — the agent works in your current directory
+vibe "Create notes.txt containing 'hello hello hello', then read it back to verify."
+```
+
+No `pip install`? Use `python run.py "<task>"` instead (Windows users can also run `bin\vibe.cmd`). See [Prerequisites](#prerequisites) and [Install](#install) for details and platform notes.
 
 ---
 
