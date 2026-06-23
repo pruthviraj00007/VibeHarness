@@ -10,15 +10,15 @@ class Config:
     temperature: float = 0.3          # 0.3 gave clean content in our experiments
     top_p: float = 0.95
     top_k: int = 0
-    num_ctx: int = 16384
     num_gpu: int = 99                 # force full GPU offload (NVIDIA via CUDA)
 
     # loop
-    max_steps: int = 15
+    max_steps: int = 15               # <= 0 means unlimited
 
-    # per-turn token budgets
-    reason_tokens: int = 2048         # phase 1 (free reasoning, discarded)
-    action_tokens: int = 1024         # phase 2 (constrained JSON action)
+    # context + per-turn token budgets (sized to fit ~8 GB VRAM for a 3B Q8 model)
+    num_ctx: int = 32768
+    reason_tokens: int = 8192         # phase 1 (free reasoning, discarded)
+    action_tokens: int = 16384        # phase 2 (constrained JSON action)
 
     # observation rendering
     observation_char_limit: int = 1500  # truncate big tool outputs in the narrative
@@ -26,3 +26,10 @@ class Config:
     # backend
     ollama_url: str = "http://127.0.0.1:11434"
     request_timeout: int = 600
+
+    # web toolset (Playwright Agent CLI)
+    web_session: str = "vibe"
+    web_cli_timeout: int = 90
+    web_observation_char_limit: int = 4000
+    web_headless: bool = False        # headed by default so a human can watch
+    web_browser: str = "chrome"

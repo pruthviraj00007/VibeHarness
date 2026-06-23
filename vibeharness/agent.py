@@ -13,6 +13,7 @@ NarrativeMemory and a Reporter.
 """
 from __future__ import annotations
 
+import itertools
 import json
 from dataclasses import asdict, dataclass, field
 
@@ -83,7 +84,10 @@ class RalphAgent:
         result = RunResult(task=task)
         schema = self._registry.action_schema()
 
-        for i in range(1, self._cfg.max_steps + 1):
+        # max_steps <= 0 means run until the agent calls `finish`.
+        turns = (itertools.count(1) if self._cfg.max_steps <= 0
+                 else range(1, self._cfg.max_steps + 1))
+        for i in turns:
             self._reporter.turn_start(i)
             user = build_turn_prompt(task, memory.render())
             decision = self._client.decide(

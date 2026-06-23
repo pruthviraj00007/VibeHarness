@@ -62,8 +62,9 @@ No `pip install`? Use `python run.py "<task>"` instead (Windows users can also r
 - **Two-phase turns.** The model first reasons freely, then emits the action(s) under the schema constraint. (This is an Ollama adaptation of [noperator's vLLM structural-tag trick](https://gist.github.com/noperator/6c711ab19027ea8056442df839f2d7e6).) The reasoning is dropped from the running context — but kept on disk (see below).
 - **Natural-language memory.** Instead of a JSON/ChatML transcript, the agent's past is a plain-English narrative ("First, you… Then, you…"), which is what a small model follows most reliably.
 - **Full reasoning logs.** Every run is written in full — *including* each turn's reasoning trace — to a hidden `.vibe/` folder in the workspace, so you can mine the traces to improve the prompt and model.
-- **Small but powerful tools.** Six tools cover the filesystem; behaviour is widened with optional parameters (e.g. `write_file.mode` = overwrite/append/prepend) rather than by adding more tools.
-- **Zero runtime dependencies.** Pure Python standard library.
+- **Small but powerful tools.** Each toolset is a handful of tools; behaviour is widened with optional parameters (e.g. `write_file.mode` = overwrite/append/prepend, `browse.action` = goto/snapshot/click/fill/…) rather than by adding more tools.
+- **Pluggable toolsets.** Tool interfaces are swappable and composable (`--toolset web,fs`); a filesystem toolset and a stateful-browser toolset ship in the box.
+- **Zero runtime dependencies.** Pure Python standard library (the web toolset shells out to the Playwright CLI).
 
 ---
 
@@ -92,6 +93,13 @@ The `Modelfile` only points at the weights — the harness sets all sampling par
 
 ### Hardware
 The Q8_0 quant of this 3B model needs **~3.5 GB of VRAM** (or runs on CPU, just slower). Any modern GPU with ≥4 GB, or a CPU with ≥8 GB RAM, is fine.
+
+### 4. (Optional) Web toolset
+For `--toolset web` you also need [Node.js](https://nodejs.org) and the Playwright Agent CLI:
+```bash
+npm install -g @playwright/cli@latest
+```
+See [Toolsets](#toolsets) for details.
 
 ---
 
@@ -216,6 +224,45 @@ vibeharness/
 run.py           no-install entrypoint   |   bin/vibe.cmd  Windows launcher
 ```
 The design leans on small interfaces: the agent depends on `LLMClient` and `Reporter` abstractions, so the whole loop is testable with a fake client and a null reporter — no model required.
+
+---
+
+## Toolsets
+
+Tools are grouped into **toolsets** you select — and compose — at runtime:
+
+```bash
+vibe --list-toolsets                 # show available toolsets
+vibe --toolset web "..."             # use the web toolset
+vibe --toolset web,fs "..."          # compose web + filesystem
+```
+
+| toolset | tools | needs |
+|---------|-------|-------|
+| `fs` (default) | `list_directory`, `read_file`, `write_file`, `search`, `manage_path`, `finish` | nothing |
+| `web` | `browse`, `finish` | Node + `@playwright/cli` |
+
+Adding a new tool interface is one class: implement `Toolset` and register it in
+`default_catalog()`. Its tools merge into the agent's action schema automatically.
+
+### Web toolset
+The `web` toolset drives a single, **stateful** browser through one `browse` tool,
+backed by the [Playwright Agent CLI](https://playwright.dev/docs/getting-started-cli).
+`snapshot` is the agent's eyes — it returns the page's text, links (with URLs),
+form fields, and element refs the agent then uses as `click`/`fill` targets. The
+browser keeps its page and cookies across actions (navigate, click, type, select,
+check, upload, screenshot, …).
+
+Install the backend once:
+```bash
+npm install -g @playwright/cli@latest
+```
+The browser runs **headed by default** so you can watch; add `--headless` to hide
+it. Example:
+```bash
+vibe --toolset web "Go to https://news.ycombinator.com and list the top 5 story titles."
+vibe --toolset web --task-file task.txt     # read a long task from a file
+```
 
 ---
 

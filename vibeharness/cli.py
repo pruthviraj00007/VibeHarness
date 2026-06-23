@@ -17,14 +17,12 @@ from pathlib import Path
 
 from .agent import RalphAgent
 from .config import Config
-from .filesystem import FileSystem
-from .fs_tools import build_default_tools
 from .llm import OllamaClient, OllamaUnavailable
 from .prompt import SystemPromptBuilder
-from .registry import ToolRegistry
 from .reporting import ConsoleReporter
 from .runlog import RunLogger
 from .settings import Settings, settable_keys
+from .toolset import ToolsetCatalog, default_catalog
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -50,21 +48,36 @@ current default temperature: {saved_temp}
         epilog=epilog, formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("task", nargs="*", help="the task for the agent to perform (quote it)")
+    p.add_argument("--task-file", default=None, metavar="PATH",
+                   help="read the task text from a file instead of the command line")
     p.add_argument("--temp", type=float, default=None, metavar="T",
                    help="sampling temperature for this run only")
     p.add_argument("--model", default=None, metavar="NAME",
                    help="Ollama model name for this run only")
     p.add_argument("--max-steps", type=int, default=None, metavar="N",
-                   help="max tool-call steps for this run only")
+                   help="max turns for this run only (0 = unlimited, until finish)")
     p.add_argument("--workdir", default=None, metavar="DIR",
                    help="working directory (default: current terminal directory)")
+    p.add_argument("--toolset", action="append", metavar="NAME",
+                   help="toolset(s) to load; repeatable or comma-separated (default: fs). "
+                        "e.g. --toolset web,fs")
+    p.add_argument("--headless", action="store_true",
+                   help="run the web browser headless (default: headed so you can watch)")
     p.add_argument("--no-color", action="store_true", help="disable colored output")
     p.add_argument("--set", nargs=2, metavar=("KEY", "VALUE"),
                    help="persist a default, e.g. --set temp 0.5")
     p.add_argument("--show-config", action="store_true", help="print current settings and exit")
     p.add_argument("--reset-config", action="store_true", help="clear saved settings and exit")
+    p.add_argument("--list-toolsets", action="store_true", help="list available toolsets and exit")
     p.add_argument("--print-system", action="store_true", help="print the system prompt and exit")
     return p
+
+
+def selected_toolset_names(args: argparse.Namespace) -> list[str]:
+    names: list[str] = []
+    for item in (args.toolset or []):
+        names += [n.strip() for n in item.split(",") if n.strip()]
+    return names or ["fs"]
 
 
 def resolve_config(args: argparse.Namespace) -> Config:
@@ -77,11 +90,17 @@ def resolve_config(args: argparse.Namespace) -> Config:
         overrides["model"] = args.model
     if args.max_steps is not None:
         overrides["max_steps"] = args.max_steps
+    if getattr(args, "headless", False):
+        overrides["web_headless"] = True
     return replace(cfg, **overrides) if overrides else cfg
 
 
-def _make_registry(config: Config) -> ToolRegistry:
-    return ToolRegistry(build_default_tools(FileSystem(), config.observation_char_limit))
+def cmd_list_toolsets() -> int:
+    print("available toolsets:")
+    for name, description in default_catalog().describe():
+        print(f"  {name:<6} {description}")
+    print("\nselect with --toolset (repeatable or comma-separated), default: fs")
+    return 0
 
 
 def cmd_show_config() -> int:
@@ -112,9 +131,27 @@ def cmd_set(key: str, value: str) -> int:
 
 
 def run_agent(args: argparse.Namespace) -> int:
-    task = " ".join(args.task)
+    if args.task_file:
+        task = Path(args.task_file).read_text(encoding="utf-8").strip()
+    else:
+        task = " ".join(args.task)
     config = resolve_config(args)
-    registry = _make_registry(config)
+    catalog = default_catalog()
+    names = selected_toolset_names(args)
+
+    try:
+        toolsets = catalog.select(names)
+    except KeyError as e:
+        print(f"error: unknown toolset {e}. Available: {', '.join(catalog.names())}")
+        return 2
+    problems = [p for ts in toolsets for p in ts.check_prerequisites()]
+    if problems:
+        print("error: missing prerequisites for the selected toolset(s):")
+        for p in problems:
+            print(f"  - {p}")
+        return 2
+
+    registry = catalog.build_registry(toolsets, config)
     system_prompt = SystemPromptBuilder(registry).build()
 
     if args.workdir:
@@ -125,14 +162,23 @@ def run_agent(args: argparse.Namespace) -> int:
 
     reporter = ConsoleReporter(color=not args.no_color)
     reporter.run_start(task, str(workdir), config)
+    print(f" toolsets: {', '.join(names)}")
 
     agent = RalphAgent(OllamaClient(config), registry, system_prompt, config, reporter=reporter)
     started = datetime.now()
+    for ts in toolsets:
+        ts.setup(config)
     try:
         result = agent.run(task)
     except OllamaUnavailable as e:
         print(f"\nerror: {e}", file=sys.stderr)
         return 1
+    finally:
+        for ts in reversed(toolsets):
+            try:
+                ts.teardown(config)
+            except Exception:
+                pass
     reporter.run_end(result)
 
     log_path = RunLogger(workdir).write(task, config, result, started)
@@ -163,10 +209,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.set:
         return cmd_set(args.set[0], args.set[1])
+    if args.list_toolsets:
+        return cmd_list_toolsets()
     if args.print_system:
-        print(SystemPromptBuilder(_make_registry(Config())).build())
+        catalog = default_catalog()
+        try:
+            toolsets = catalog.select(selected_toolset_names(args))
+        except KeyError as e:
+            print(f"error: unknown toolset {e}. Available: {', '.join(catalog.names())}")
+            return 2
+        print(SystemPromptBuilder(catalog.build_registry(toolsets, Config())).build())
         return 0
-    if not args.task:
+    if not args.task and not args.task_file:
         print("error: no task given.\n")
         parser.print_help()
         return 2

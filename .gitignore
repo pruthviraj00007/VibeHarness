@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .vibe/
+.playwright-cli/
 runs/
 workspace/*
 !workspace/.gitkeep
