@@ -15,10 +15,11 @@ class Config:
     # loop
     max_steps: int = 15               # <= 0 means unlimited
 
-    # context + per-turn token budgets (sized to fit ~8 GB VRAM for a 3B Q8 model)
-    num_ctx: int = 32768
-    reason_tokens: int = 8192         # phase 1 (free reasoning, discarded)
-    action_tokens: int = 16384        # phase 2 (constrained JSON action)
+    # context + per-turn token budgets. Sized so two parallel slots fit ~8 GB VRAM
+    # (OLLAMA_NUM_PARALLEL=2): num_ctx*parallel is what drives KV-cache memory.
+    num_ctx: int = 16384
+    reason_tokens: int = 4096         # phase 1 (free reasoning, discarded)
+    action_tokens: int = 4096         # phase 2 (constrained JSON action)
 
     # observation rendering
     observation_char_limit: int = 1500  # truncate big tool outputs in the narrative

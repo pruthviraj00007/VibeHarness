@@ -275,7 +275,11 @@ pip install -e ".[dev]" && pytest -q
 ```
 Two tiers:
 - **Unit tests** (fast, zero dependencies) cover the filesystem service, every tool, schema/toolset building, the settings store, narrative memory, prompt building, the LLM helpers, run logging, and the full agent loop (single- and multi-action turns) via a fake LLM client.
-- **Live integration tests** (`tests/integration/`) drive the *real* `browse` tool through `playwright-cli` against a demo web app at `http://localhost:3000`, exercising the agent's actual tool-calling surface — navigate, snapshot, click, fill. They **auto-skip** when the CLI or server isn't present (so CI stays green); start the demo app to run them. These are what catch integration bugs the fake-CLI unit tests can't (e.g. a snapshot returning empty due to a codec crash).
+- **Live integration tests** (`tests/integration/`) talk to the *real* dependencies, so a crashed Ollama or a broken generation/tool path is actually caught (the fast unit tests mock these and can't):
+  - `test_model_live.py` — hits Ollama, **generates text from the model and stops inference early**, and verifies a clear error when the server is down.
+  - `test_web_live.py` — drives the real `browse` tool through `playwright-cli` against a demo app at `http://localhost:3000` (navigate, snapshot, click, fill).
+
+  They **auto-skip** when Ollama / the CLI / the demo server aren't present, so CI stays green; run them locally to confirm core functionality.
 
 ---
 
@@ -285,6 +289,7 @@ Two tiers:
 - **It's slow / not using my GPU** — confirm with `ollama ps` (`PROCESSOR` should say `100% GPU`) and `nvidia-smi` (VRAM should be in use). On laptops with both an NVIDIA dGPU *and* an integrated GPU, Ollama's Vulkan backend may pick the iGPU; force CUDA with `setx OLLAMA_VULKAN 0` and restart the Ollama server.
 - **Garbled / non-English tokens in output** — small models drift at high temperature; the *action* is always valid (schema-constrained), but lower `--temp` (e.g. 0.3) for cleaner reasoning and content.
 - **No colors on Windows** — colors use ANSI; pass `--no-color` if your console doesn't render them.
+- **Running several agents at once** — by default Ollama serves one request at a time. Set `OLLAMA_NUM_PARALLEL=2` (and restart Ollama) to generate concurrently. Note the VRAM cost: Ollama allocates `num_ctx × parallel` of KV cache, so on an 8 GB card the defaults (`num_ctx=16384`, 2 parallel) sit around ~6.8 GB. For more parallel instances, lower `num_ctx` (in `config.py`); pushing context *and* parallelism too high will OOM and crash Ollama.
 
 ---
 

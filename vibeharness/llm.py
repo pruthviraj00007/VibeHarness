@@ -53,6 +53,42 @@ class OllamaClient(LLMClient):
         action = self._act(system, user, reasoning, action_schema, on_action)
         return Decision(reasoning=reasoning, action_json=action)
 
+    def generate(self, prompt: str, max_chars: int | None = None,
+                 on_token: TokenSink | None = None) -> str:
+        """One-shot raw streamed completion. If ``max_chars`` is given, inference
+        is stopped early (the connection is closed) once that many characters have
+        been produced. Raises :class:`OllamaUnavailable` if the server is down.
+        Useful as a core-functionality / liveness check."""
+        req = urllib.request.Request(
+            self._cfg.ollama_url + "/api/generate",
+            data=json.dumps({"model": self._cfg.model, "prompt": prompt,
+                             "stream": True, "options": self._options()}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        parts: list[str] = []
+        produced = 0
+        try:
+            with urllib.request.urlopen(req, timeout=self._cfg.request_timeout) as resp:
+                for raw in resp:
+                    line = raw.decode("utf-8").strip()
+                    if not line:
+                        continue
+                    obj = json.loads(line)
+                    chunk = obj.get("response", "")
+                    if chunk:
+                        parts.append(chunk)
+                        produced += len(chunk)
+                        if on_token:
+                            on_token(chunk)
+                    if (max_chars is not None and produced >= max_chars) or obj.get("done"):
+                        break
+        except urllib.error.URLError as e:
+            raise OllamaUnavailable(
+                f"Could not reach Ollama at {self._cfg.ollama_url}. "
+                f"Is it running? Start it with `ollama serve`. ({e.reason})"
+            ) from e
+        return "".join(parts)
+
     # ---- phase 1: free reasoning, stop at </think> ----
     def _reason(self, system: str, user: str, on_token: TokenSink | None) -> str:
         return self._stream("/api/chat", {
