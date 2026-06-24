@@ -153,27 +153,13 @@ class ManagePathTool(Tool):
             return ToolResult(False, f"you tried to {action} '{path}' but it returned an error: {e}.")
 
 
-class FinishTool(Tool):
-    name = "finish"
-    description = ("Call this when the task is complete. Provide a short summary of what "
-                   "you accomplished. This ends the session.")
-
-    @property
-    def parameters(self):
-        return [Param("summary", "string", "A short summary of what was accomplished.")]
-
-    def run(self, args: dict) -> ToolResult:
-        summary = args.get("summary", "(no summary provided)")
-        return ToolResult(True, f"you finished the task: {summary}", is_final=True)
-
-
 def build_default_tools(fs: FileSystem, obs_limit: int) -> list[Tool]:
-    """Factory for the standard toolset (keeps wiring in one place)."""
+    """Factory for the filesystem toolset (keeps wiring in one place).
+    The run-ending `validate` tool is injected separately as a core tool."""
     return [
         ListDirectoryTool(fs, obs_limit),
         ReadFileTool(fs, obs_limit),
         WriteFileTool(fs),
         SearchTool(fs, obs_limit),
         ManagePathTool(fs),
-        FinishTool(),
     ]

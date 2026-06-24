@@ -28,6 +28,8 @@ class Reporter(ABC):
     @abstractmethod
     def action_result(self, action: "Action") -> None: ...
     @abstractmethod
+    def note(self, text: str) -> None: ...
+    @abstractmethod
     def run_end(self, result: "RunResult") -> None: ...
 
 
@@ -37,6 +39,7 @@ class NullReporter(Reporter):
     def reasoning_token(self, text): pass
     def action_token(self, text): pass
     def action_result(self, action): pass
+    def note(self, text): pass
     def run_end(self, result): pass
 
 
@@ -88,6 +91,9 @@ class ConsoleReporter(Reporter):
             self._w(self._c("yellow", "\n│ action: "))
             self._action_open = True
         self._w(self._c("yellow", text))
+
+    def note(self, text: str) -> None:
+        self._w(self._c("dim", f"│ {text}\n"))
 
     def action_result(self, action) -> None:
         color = "green" if action.ok else "red"

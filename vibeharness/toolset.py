@@ -71,7 +71,8 @@ class ToolsetCatalog:
         return [self.get(n) for n in names]
 
     def build_registry(self, toolsets: list[Toolset], config: Config) -> ToolRegistry:
-        tools: list[Tool] = []
+        from .validation import ValidateTool
+        tools: list[Tool] = [ValidateTool()]   # core: present in every toolset
         for ts in toolsets:
             tools.extend(ts.create_tools(config))
         return ToolRegistry(tools)

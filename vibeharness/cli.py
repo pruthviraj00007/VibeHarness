@@ -23,6 +23,7 @@ from .reporting import ConsoleReporter
 from .runlog import RunLogger
 from .settings import Settings, settable_keys
 from .toolset import ToolsetCatalog, default_catalog
+from .validation import LLMValidator
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -162,14 +163,20 @@ def run_agent(args: argparse.Namespace) -> int:
 
     reporter = ConsoleReporter(color=not args.no_color)
     reporter.run_start(task, str(workdir), config)
-    print(f" toolsets: {', '.join(names)}")
+    print(f" toolsets: {', '.join(names)} (+ validate)")
 
-    agent = RalphAgent(OllamaClient(config), registry, system_prompt, config, reporter=reporter)
+    client = OllamaClient(config)
+    validator = LLMValidator(client)
+    agent = RalphAgent(client, registry, system_prompt, config, validator, reporter=reporter)
+
     started = datetime.now()
+    logger = RunLogger(workdir, started)
+    checkpoint = lambda res: _safe_log(logger, task, config, res)   # stream log each turn
+
     for ts in toolsets:
         ts.setup(config)
     try:
-        result = agent.run(task)
+        result = agent.run(task, on_turn=checkpoint)
     except OllamaUnavailable as e:
         print(f"\nerror: {e}", file=sys.stderr)
         return 1
@@ -179,11 +186,18 @@ def run_agent(args: argparse.Namespace) -> int:
                 ts.teardown(config)
             except Exception:
                 pass
-    reporter.run_end(result)
 
-    log_path = RunLogger(workdir).write(task, config, result, started)
-    print(f" log: {log_path}")
+    reporter.run_end(result)
+    _safe_log(logger, task, config, result)   # final write
+    print(f" log: {logger.json_path}")
     return 0 if result.finished else 2
+
+
+def _safe_log(logger: RunLogger, task: str, config: Config, result) -> None:
+    try:
+        logger.write(task, config, result)
+    except Exception:
+        pass
 
 
 def main(argv: list[str] | None = None) -> int:

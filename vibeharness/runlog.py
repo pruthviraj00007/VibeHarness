@@ -1,8 +1,10 @@
-"""Per-run logging into a hidden ``.vibe/`` folder in the workspace.
+"""Streaming per-run logging into a hidden ``.vibe/`` folder in the workspace.
 
-Each run writes two files, timestamped:
-  - ``<stamp>.json``  full structured log INCLUDING the reasoning trace of every
-                      turn (for later analysis / prompt-and-model improvement)
+A :class:`RunLogger` is bound to one run (a fixed timestamped file pair) and is
+written after *every* turn, so the log reflects progress live and a killed run
+still keeps its trace. Each run writes:
+  - ``<stamp>.json``  full structured log INCLUDING each turn's reasoning trace
+                      and the validator verdicts (for analysis)
   - ``<stamp>.md``    a human-readable transcript
 
 Logs live alongside the work (the current workspace) so each project keeps its
@@ -31,27 +33,31 @@ def _hide(path: Path) -> None:
 
 
 class RunLogger:
-    def __init__(self, workspace: Path | str):
+    def __init__(self, workspace: Path | str, started: datetime):
         self.dir = Path(workspace) / ".vibe"
+        self.started = started
+        self.stamp = started.strftime("%Y%m%d_%H%M%S")
 
-    def write(self, task: str, config: Config, result: RunResult, started: datetime) -> Path:
+    @property
+    def json_path(self) -> Path:
+        return self.dir / f"{self.stamp}.json"
+
+    def write(self, task: str, config: Config, result: RunResult) -> Path:
+        """Write/overwrite the log for the current state. Safe to call each turn."""
         self.dir.mkdir(parents=True, exist_ok=True)
         _hide(self.dir)
-        stamp = started.strftime("%Y%m%d_%H%M%S")
-
         payload = {
             "task": task,
-            "started_at": started.isoformat(timespec="seconds"),
+            "started_at": self.started.isoformat(timespec="seconds"),
             "model": config.model,
             "temperature": config.temperature,
-            "top_p": config.top_p,
-            "top_k": config.top_k,
             "max_steps": config.max_steps,
             "finished": result.finished,
             "final_summary": result.final_summary,
+            "validations": result.validations,
             "turns": result.to_dict()["turns"],   # includes per-turn reasoning traces
         }
-        json_path = self.dir / f"{stamp}.json"
-        json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-        (self.dir / f"{stamp}.md").write_text(result.transcript(), encoding="utf-8")
-        return json_path
+        self.json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False),
+                                  encoding="utf-8")
+        (self.dir / f"{self.stamp}.md").write_text(result.transcript(), encoding="utf-8")
+        return self.json_path

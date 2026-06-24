@@ -36,16 +36,17 @@ class ToolsetCatalogTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             ToolsetCatalog([_StubToolset(), _StubToolset()])
 
-    def test_build_registry_merges_selected_toolsets(self):
+    def test_build_registry_merges_selected_toolsets_plus_core(self):
         catalog = default_catalog()
         registry = catalog.build_registry(catalog.select(["fs", "web"]), self.config)
         names = set(registry.names())
         self.assertIn("read_file", names)   # from fs
         self.assertIn("browse", names)      # from web
-        # the merged action schema covers tools from both toolsets
+        self.assertIn("validate", names)    # core, injected into every registry
+        # the merged action schema covers tools from both toolsets + validate
         consts = {b["properties"]["tool"]["const"]
                   for b in registry.action_schema()["items"]["oneOf"]}
-        self.assertTrue({"read_file", "browse"} <= consts)
+        self.assertTrue({"read_file", "browse", "validate"} <= consts)
 
 
 if __name__ == "__main__":

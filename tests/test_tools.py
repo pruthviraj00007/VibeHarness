@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from vibeharness.filesystem import FileSystem
-from vibeharness.fs_tools import (FinishTool, ListDirectoryTool, ManagePathTool,
+from vibeharness.fs_tools import (ListDirectoryTool, ManagePathTool,
                                   ReadFileTool, SearchTool, WriteFileTool,
                                   build_default_tools)
 
@@ -65,16 +65,10 @@ class ToolsTest(unittest.TestCase):
         res = ManagePathTool(self.fs).run({"action": "move", "path": self.p("a.txt")})
         self.assertFalse(res.ok)
 
-    def test_finish_is_final(self):
-        res = FinishTool().run({"summary": "all done"})
-        self.assertTrue(res.ok)
-        self.assertTrue(res.is_final)
-        self.assertIn("all done", res.observation)
-
     def test_default_toolset_names(self):
         names = {t.name for t in build_default_tools(self.fs, 1000)}
         self.assertEqual(names, {"list_directory", "read_file", "write_file",
-                                 "search", "manage_path", "finish"})
+                                 "search", "manage_path"})
 
 
 if __name__ == "__main__":

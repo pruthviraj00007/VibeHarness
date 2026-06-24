@@ -17,12 +17,15 @@ import itertools
 import json
 from dataclasses import asdict, dataclass, field
 
+from typing import Callable
+
 from .config import Config
 from .llm import LLMClient
 from .memory import NarrativeMemory
 from .prompt import build_turn_prompt
 from .registry import ToolRegistry
 from .reporting import NullReporter, Reporter
+from .validation import Validator
 
 
 @dataclass
@@ -50,6 +53,7 @@ class RunResult:
     turns: list[Turn] = field(default_factory=list)
     finished: bool = False
     final_summary: str = ""
+    validations: list[dict] = field(default_factory=list)  # each validator verdict
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -64,6 +68,12 @@ class RunResult:
                 out.append(f"action: {a.tool} {json.dumps(a.args, ensure_ascii=False)}")
                 out.append(f"result: {a.observation}")
             out.append("")
+        if self.validations:
+            out.append("VALIDATIONS:")
+            for v in self.validations:
+                out.append(f"  turn {v['turn']}: "
+                           f"{'PASS' if v['passed'] else 'FAIL'} — {v['reason']}")
+            out.append("")
         out.append(f"FINISHED: {self.finished}")
         if self.final_summary:
             out.append(f"SUMMARY: {self.final_summary}")
@@ -71,20 +81,21 @@ class RunResult:
 
 
 class RalphAgent:
-    def __init__(self, client: LLMClient, registry: ToolRegistry,
-                 system_prompt: str, config: Config, reporter: Reporter | None = None):
+    def __init__(self, client: LLMClient, registry: ToolRegistry, system_prompt: str,
+                 config: Config, validator: Validator, reporter: Reporter | None = None):
         self._client = client
         self._registry = registry
         self._system = system_prompt
         self._cfg = config
+        self._validator = validator
         self._reporter = reporter or NullReporter()
 
-    def run(self, task: str) -> RunResult:
+    def run(self, task: str, on_turn: Callable[["RunResult"], None] | None = None) -> RunResult:
         memory = NarrativeMemory()
         result = RunResult(task=task)
         schema = self._registry.action_schema()
 
-        # max_steps <= 0 means run until the agent calls `finish`.
+        # max_steps <= 0 means run until validation passes.
         turns = (itertools.count(1) if self._cfg.max_steps <= 0
                  else range(1, self._cfg.max_steps + 1))
         for i in turns:
@@ -102,20 +113,38 @@ class RalphAgent:
             if error is not None:
                 self._record(turn, Action(None, {}, f"your last response was invalid and "
                                           f"could not be run: {error}.", ok=False), memory)
-                continue
+            else:
+                for tool_name, args in actions:
+                    if tool_name == "validate":
+                        self._validate(task, args, turn, memory, result)
+                        if result.finished:
+                            break
+                        continue
+                    self._record(turn, self._execute(tool_name, args), memory)
 
-            for tool_name, args in actions:
-                action = self._execute(tool_name, args)
-                self._record(turn, action, memory)
-                if action.final:
-                    result.finished = True
-                    result.final_summary = args.get("summary", "")
-                    break
-
+            if on_turn is not None:          # stream the log after every turn
+                on_turn(result)
             if result.finished:
                 break
 
         return result
+
+    # ---- validation ----
+    def _validate(self, task: str, args: dict, turn: Turn, memory: NarrativeMemory,
+                  result: RunResult) -> None:
+        self._reporter.note("validating — checking the task against a validator…")
+        verdict = self._validator.validate(task, memory.render(), args.get("summary", ""))
+        result.validations.append({"turn": turn.index, "passed": verdict.passed,
+                                   "reason": verdict.reason, "reasoning": verdict.reasoning})
+        if verdict.passed:
+            obs = f"validation PASSED — {verdict.reason}"
+            self._record(turn, Action("validate", args, obs, ok=True, final=True), memory)
+            result.finished = True
+            result.final_summary = verdict.reason
+        else:
+            obs = (f"validation FAILED — {verdict.reason} "
+                   f"Keep working to address this, then call validate again.")
+            self._record(turn, Action("validate", args, obs, ok=False), memory)
 
     # ---- helpers ----
     def _execute(self, tool_name: str | None, args: dict) -> Action:

@@ -1,10 +1,9 @@
 import unittest
 
-from vibeharness.filesystem import FileSystem
-from vibeharness.fs_tools import build_default_tools
+from vibeharness.config import Config
 from vibeharness.memory import NarrativeMemory
 from vibeharness.prompt import SystemPromptBuilder, build_turn_prompt
-from vibeharness.registry import ToolRegistry
+from vibeharness.toolset import default_catalog
 
 
 class NarrativeMemoryTest(unittest.TestCase):
@@ -22,12 +21,13 @@ class NarrativeMemoryTest(unittest.TestCase):
 
 class PromptTest(unittest.TestCase):
     def setUp(self):
-        self.registry = ToolRegistry(build_default_tools(FileSystem(), 1000))
+        catalog = default_catalog()
+        self.registry = catalog.build_registry(catalog.select(["fs"]), Config())
 
     def test_system_prompt_contains_tools_and_schema(self):
         sp = SystemPromptBuilder(self.registry).build()
         self.assertIn("write_file", sp)
-        self.assertIn("finish", sp)
+        self.assertIn("validate", sp)
         self.assertIn("Action schema", sp)
         self.assertIn("oneOf", sp)
 

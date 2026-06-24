@@ -34,7 +34,7 @@ class RegistryTest(unittest.TestCase):
     def test_get_and_names(self):
         self.assertIsNotNone(self.registry.get("write_file"))
         self.assertIsNone(self.registry.get("does_not_exist"))
-        self.assertIn("finish", self.registry.names())
+        self.assertIn("manage_path", self.registry.names())
 
     def test_action_schema_is_array_of_tool_calls(self):
         schema = self.registry.action_schema()
@@ -49,11 +49,6 @@ class RegistryTest(unittest.TestCase):
         for branch in self.registry.action_schema()["items"]["oneOf"]:
             self.assertEqual(branch["required"], ["tool", "args"])
             self.assertIn("args", branch["properties"])
-
-    def test_finish_branch_requires_summary(self):
-        branch = next(b for b in self.registry.action_schema()["items"]["oneOf"]
-                      if b["properties"]["tool"]["const"] == "finish")
-        self.assertEqual(branch["properties"]["args"]["required"], ["summary"])
 
     def test_docs_mention_every_tool(self):
         docs = self.registry.docs()
