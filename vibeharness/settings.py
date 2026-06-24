@@ -27,12 +27,19 @@ _SETTABLE: dict[str, tuple[str, type]] = {
     "max_steps": ("max_steps", int),
     "top-p": ("top_p", float),
     "top_k": ("top_k", int),
+    "num-ctx": ("num_ctx", int),
+    "num_ctx": ("num_ctx", int),
+    "reason-tokens": ("reason_tokens", int),
+    "reason_tokens": ("reason_tokens", int),
+    "action-tokens": ("action_tokens", int),
+    "action_tokens": ("action_tokens", int),
 }
 
 
 def settable_keys() -> list[str]:
     """Canonical, de-duplicated list of user-facing settable keys."""
-    return ["temp", "model", "max-steps", "top-p", "top_k"]
+    return ["temp", "model", "max-steps", "top-p", "top_k",
+            "num-ctx", "reason-tokens", "action-tokens"]
 
 
 def _home() -> Path:

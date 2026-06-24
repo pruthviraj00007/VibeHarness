@@ -153,7 +153,7 @@ def run_agent(args: argparse.Namespace) -> int:
         return 2
 
     registry = catalog.build_registry(toolsets, config)
-    system_prompt = SystemPromptBuilder(registry).build()
+    system_prompt = SystemPromptBuilder(registry).build(task)   # task anchored at the front
 
     if args.workdir:
         workdir = Path(args.workdir).resolve()

@@ -15,11 +15,14 @@ class Config:
     # loop
     max_steps: int = 15               # <= 0 means unlimited
 
-    # context + per-turn token budgets. Sized so two parallel slots fit ~8 GB VRAM
-    # (OLLAMA_NUM_PARALLEL=2): num_ctx*parallel is what drives KV-cache memory.
-    num_ctx: int = 16384
-    reason_tokens: int = 4096         # phase 1 (free reasoning, discarded)
-    action_tokens: int = 4096         # phase 2 (constrained JSON action)
+    # context + per-turn token budgets.
+    # num_ctx is the whole window (system prompt + history + generation share it).
+    # 131072 is the model's max; on an 8 GB card the KV overflow spills to system
+    # RAM (Windows shared GPU memory), so context fills slow down but don't OOM.
+    # Use OLLAMA_NUM_PARALLEL=1 so a single instance gets the whole window.
+    num_ctx: int = 131072
+    reason_tokens: int = 2048         # phase 1 (free reasoning, discarded)
+    action_tokens: int = 16384        # phase 2 (constrained JSON action) — can be large
 
     # observation rendering
     observation_char_limit: int = 1500  # truncate big tool outputs in the narrative

@@ -31,10 +31,22 @@ class PromptTest(unittest.TestCase):
         self.assertIn("Action schema", sp)
         self.assertIn("oneOf", sp)
 
-    def test_turn_prompt_contains_task_and_narrative(self):
+    def test_system_prompt_anchors_task_at_front(self):
+        sp = SystemPromptBuilder(self.registry).build("DO THE THING")
+        self.assertIn("DO THE THING", sp)
+        self.assertIn("YOUR ASSIGNED TASK", sp)
+        self.assertLess(sp.index("DO THE THING"), sp.index("# Tools"))  # before the docs
+
+    def test_system_prompt_without_task_is_generic(self):
+        sp = SystemPromptBuilder(self.registry).build()
+        self.assertNotIn("YOUR ASSIGNED TASK", sp)
+
+    def test_turn_prompt_reminds_task_at_the_end(self):
         prompt = build_turn_prompt("make a file", "First, you did a thing")
         self.assertIn("make a file", prompt)
         self.assertIn("First, you did a thing", prompt)
+        # the task reminder sits AFTER the history (recency zone), not before it
+        self.assertGreater(prompt.index("make a file"), prompt.index("First, you did a thing"))
         self.assertIn("next action", prompt.lower())
 
 

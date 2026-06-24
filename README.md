@@ -151,7 +151,7 @@ vibe --set max-steps 25     # persist a new default step budget
 vibe --reset-config         # restore built-in defaults
 vibe --print-system "x"     # print the generated system prompt
 ```
-Persistent defaults live in `~/.vibeharness/settings.json` (override the location with the `VIBEHARNESS_HOME` env var). Resolution order is **built-in defaults < saved settings < per-run flags**. Settable keys: `temp`, `model`, `max-steps`, `top-p`, `top_k`. The built-in default temperature is `0.3`.
+Persistent defaults live in `~/.vibeharness/settings.json` (override the location with the `VIBEHARNESS_HOME` env var). Resolution order is **built-in defaults < saved settings < per-run flags**. Settable keys: `temp`, `model`, `max-steps`, `top-p`, `top_k`, `num-ctx`, `reason-tokens`, `action-tokens`. The built-in default temperature is `0.3`.
 
 Each run is logged (with reasoning traces) to a hidden `.vibe/` folder in the workspace — see [Run logs](#run-logs-vibe).
 
